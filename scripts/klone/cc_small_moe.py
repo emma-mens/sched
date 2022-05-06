@@ -20,7 +20,8 @@ args = parser.parse_args()
 
 
 gpus = 16
-cmd = 'MKL_THREADING_LAYER=GNU OMP_NUM_THREADS=1 fairseq-train --task language_modeling --share-decoder-input-output-embed --sample-break-mode none --ddp-backend=fully_sharded --log-format simple --log-interval 50 --fp16 --keep-best-checkpoints 1 --no-epoch-checkpoints --keep-interval-updates 1 --distributed-port 12597 --distributed-world-size {0} --valid-subset valid'.format(gpus)
+cmd = 'MKL_THREADING_LAYER=GNU OMP_NUM_THREADS=1 fairseq-train --task language_modeling --share-decoder-input-output-embed --sample-break-mode none --ddp-backend=no_c10d --log-format simple --log-interval 50 --fp16 --keep-best-checkpoints 1 --no-epoch-checkpoints --keep-interval-updates 1 --distributed-port 12597 --distributed-world-size {0} --valid-subset valid --no-save'.format(gpus)
+#--ddp-backend=fully_sharded
 
 args2 = {}
 
@@ -44,13 +45,13 @@ partition = 'ckpt'
 #begin = '03:00'
 #partition = 'scavenge'
 
-change_dir = 'fairseq/'
+change_dir = 'fairseq/' # '/gscratch/stf/emazuh/fairseq/'
 repo = 'fairseq'
 exclude = ''
 
 s = gpuscheduler.HyakScheduler(verbose=args.verbose, account='stf', partition=partition, use_gres=False)
 
-checkpoint_base_dir = '/gscratch/scrubbed/timdettmers'
+checkpoint_base_dir = '/gscratch/scrubbed/timdettmers' # '/mmfs1/gscratch/stf/emazuh/sched/checkpoints'
 
 fp16 = True
 args3 = {}
@@ -71,17 +72,21 @@ args2['fp16-no-flatten-grads'] = ''
 args2['min-loss-scale'] = 1e-10
 args2['fp16-scale-window'] = 250
 args2['clip-norm'] = 0.6
+# args2['grad-comp-threshold-type'] = "snr" #"gradient" #'percentile'
+# args2['grad-comp-threshold'] = 0.5 #55000 # 0.9
 args3['decoder-layers'] = [10]
 
 
 args2['lr-scheduler'] = 'cosine'
 args2['optimizer'] = 'adam'
-args3['adam-betas'] = ["'(0.9, 0.995)'"] # baseline params
+args3['adam-betas'] = ["'(0.9, 0.995)'"]  # ["'(0.8, 0.995)'", "'(0.995, 0.995)'"] # ["'(0.9, 0.995)'"] , "'(0.99, 0.995)'", "'(0.999, 0.995)'"] # baseline params
 args3['adam-eps'] = [1e-7] # baseline params
 
 args3[('max-tokens', 'update-freq', 'tokens-per-sample')] = []
 args3[('max-tokens', 'update-freq', 'tokens-per-sample')].append((2048, 128//gpus, 512))
 args3[('max-update', 'warmup-updates', '')] = [(16000, 3000, ' /gscratch/scrubbed/cc_small')]
+args3['grad-comp-threshold-type'] = ['gradient', 'snr']
+args3['grad-comp-threshold'] = [0.5, 0.8]
 
 args3[('dropout', 'attention-dropout', 'relu-dropout')] = [(0.0, 0.0, 0.0)]
 
@@ -150,7 +155,7 @@ for seed in range(num_seeds):
             job_cmd = job_cmd + ' --seed {0}'.format(seed)
             checkpoint_dir = '{2}/{1}/{0} '.format(hashlib.md5(str(job_cmd).encode('utf-8')).hexdigest(), ckp_name, checkpoint_base_dir)
             save_dir = ' --save-dir {0}'.format(checkpoint_dir)
-            job_cmd = job_cmd + save_dir
+            job_cmd = job_cmd + save_dir + ' --use-old-adam'
             #cmds = ['source /private/home/timdettmers/.bashrc', 'source activate base2', job_cmd]
             cmds = [job_cmd]
             if rdm.rand(1) <= args.p:
